@@ -104,7 +104,11 @@ func (h *chromaHighlighter) DetectLanguage(code string) string {
 	if lexer == nil {
 		return "plaintext"
 	}
-	return lexer.Config().Name
+	cfg := lexer.Config()
+	if len(cfg.Aliases) > 0 {
+		return cfg.Aliases[0] // "go", "python", "rust"
+	}
+	return cfg.Name
 }
 
 // Languages возвращает курируемый список языков для UI-селектора.

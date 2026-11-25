@@ -1,21 +1,26 @@
-// cmd/codepic-cli/main.go
 package main
 
 import (
-	"fmt"
+	"image/png"
+	"log"
 	"os"
 
+	"github.com/rurewa/codepic-app/internal/clipboard" // ← новое
 	"github.com/rurewa/codepic-app/internal/highlight"
+	"github.com/rurewa/codepic-app/internal/render"
 	"github.com/rurewa/codepic-app/internal/theme"
 )
 
 func main() {
+	// 1. Флаг --copy — в самом начале, до чтения файла
+	copyToClipboard := len(os.Args) > 2 && os.Args[2] == "--copy"
+
+	// 2. Чтение кода (без изменений)
 	code := sampleCode
 	if len(os.Args) > 1 {
 		data, err := os.ReadFile(os.Args[1])
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			log.Fatal(err)
 		}
 		code = string(data)
 	}
@@ -23,22 +28,44 @@ func main() {
 	h := highlight.NewChroma()
 	tokens, err := h.Highlight(code, "auto")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
 
 	th, err := theme.Builtin().Get("dracula")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
 
-	fmt.Printf("Detected language: %s\n", h.DetectLanguage(code))
-	fmt.Printf("Theme: %s (bg=%v, fg=%v)\n\n", th.Name, th.Background, th.Foreground)
-
-	for _, tok := range tokens {
-		fmt.Print(theme.ANSIColor(tok.Style, th), tok.Text, "\x1b[0m")
+	r := render.New()
+	img, err := r.Render(tokens, th, render.DefaultStyle())
+	if err != nil {
+		log.Fatal(err)
 	}
+
+	// 3. Сохранение PNG (без изменений)
+	f, err := os.Create("out.png")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	if err := png.Encode(f, img); err != nil {
+		log.Fatal(err)
+	}
+
+	// 4. Копирование в буфер — после png.Encode
+	if copyToClipboard {
+		cb, err := clipboard.New()
+		if err != nil {
+			log.Fatalf("clipboard: %v", err)
+		}
+		if err := cb.WriteImage(img); err != nil {
+			log.Fatalf("clipboard: %v", err)
+		}
+		log.Println("copied to clipboard")
+	}
+
+	log.Printf("wrote out.png (lang=%s, theme=%s)", h.DetectLanguage(code), th.Name)
 }
 
 const sampleCode = `package main
@@ -46,6 +73,6 @@ const sampleCode = `package main
 import "fmt"
 
 func main() {
-	fmt.Println("hello")
+	fmt.Println("hello, world")
 }
 `

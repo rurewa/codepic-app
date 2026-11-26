@@ -1,7 +1,5 @@
 # CodePic
 
-# CodePic
-
 Локальный скриншотер кода для мессенджеров. 100% local, no cloud.
 
 > ⚠️ В активной разработке. Первый релиз — скоро.
@@ -95,8 +93,37 @@
 | **Could** | CLI-режим, watermark, история, диффы, i18n |
 | **Won't (v1)** | Облако, аккаунты, плагины, свой редактор |
 
-### 💎 Резюме
 
-Минимально жизнеспособная версия — это **«вставил → выбрал тему → скопировал PNG»** плюс несколько настроек оформления (фон, отступы, шрифт, номера строк). Всё остальное — расширения, которые не должны задерживать первый релиз. Такой scope реалистично закрыть за несколько недель вечерней разработки, а потом наращивать по обратной связи.
+### Проверка CLI
+```shell
+cd codepic-app/
+```
+Без аргументов — встроенный пример, дефолтный стиль
+```shell
+go run ./cmd/codepic-cli
+```
+Реальный файл + тема
+```shell
+go run ./cmd/codepic-cli --theme nord cmd/codepic-cli/main.go
+```
+Сохранить пресет
+```shell
+go run ./cmd/codepic-cli --theme monokai --save-preset my-mk
+```
+→ preset "my-mk" saved (/home/you/.config/codepic/config.json)
 
-Следующий логичный шаг — набросать структуру пакетов и интерфейсов в Go: `main.go`, `ui/`, `render/`, `highlight/`, `clipboard/`, `config/`. Могу это сделать, если готовы перейти к коду.
+Список пресетов
+```shell
+go run ./cmd/codepic-cli --list-presets
+```
+→ my-mk
+
+Загрузить пресет
+```shell
+go run ./cmd/codepic-cli --preset my-mk --out mk.png
+```
+--copy без файла теперь тоже работает
+```shell
+go run ./cmd/codepic-cli --copy
+```
+(в TTY — warning про clipboard, PNG сохранён)

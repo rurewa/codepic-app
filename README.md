@@ -142,3 +142,8 @@ go run ./cmd/codepic-cli --copy
 # Заодно убедитесь, что CLI остался статическим:
 ldd ./codepic-cli
 # → not a dynamic executable
+
+#### ToDo
+
+- [ ] Или сначала — сохранение last_style при закрытии окна (20 строк, ощутимое удобство).
+- [ ] CI/CD — пайплайн с fyne-cross, артефакты для Linux и Windows, README со скриншотом

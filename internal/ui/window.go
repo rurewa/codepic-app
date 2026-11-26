@@ -39,10 +39,11 @@ type View struct {
 	fontSlider    *widget.Slider
 	radiusSlider  *widget.Slider
 
-	lineNumsCheck   *widget.Check
-	windowDotsCheck *widget.Check
-	shadowCheck     *widget.Check
-	gradientCheck   *widget.Check
+	lineNumsCheck    *widget.Check
+	windowDotsCheck  *widget.Check
+	shadowCheck      *widget.Check
+	gradientCheck    *widget.Check
+	transparentCheck *widget.Check
 
 	presetSelect *widget.Select
 
@@ -83,8 +84,6 @@ func NewView(svc *app.Service, w fyne.Window) *View {
 	v.refreshPreview()
 	return v
 }
-
-// --- Виджеты ---
 
 func (v *View) buildEditor() *widget.Entry {
 	e := widget.NewMultiLineEntry()
@@ -168,7 +167,7 @@ func (v *View) buildSidebar() fyne.CanvasObject {
 		widget.NewSeparator(),
 	)
 
-	// --- Оформление ---
+	// --- Слайдеры ---
 	v.paddingSlider = widget.NewSlider(16, 128)
 	v.paddingSlider.Step = 4
 	v.paddingSlider.SetValue(float64(v.style.Padding))
@@ -193,6 +192,7 @@ func (v *View) buildSidebar() fyne.CanvasObject {
 		v.scheduleRender()
 	}
 
+	// --- Чекбоксы ---
 	v.lineNumsCheck = widget.NewCheck("Номера строк", func(b bool) {
 		v.style.ShowLineNumbers = b
 		v.scheduleRender()
@@ -217,6 +217,20 @@ func (v *View) buildSidebar() fyne.CanvasObject {
 	})
 	v.gradientCheck.SetChecked(v.style.Gradient)
 
+	v.transparentCheck = widget.NewCheck("Прозрачный фон", func(b bool) {
+		v.style.Transparent = b
+		if b {
+			v.gradientCheck.Disable()
+		} else {
+			v.gradientCheck.Enable()
+		}
+		v.scheduleRender()
+	})
+	v.transparentCheck.SetChecked(v.style.Transparent)
+	if v.style.Transparent {
+		v.gradientCheck.Disable()
+	}
+
 	styleSection := container.NewVBox(
 		widget.NewLabelWithStyle("Оформление", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		widget.NewLabel("Отступ"),
@@ -230,6 +244,7 @@ func (v *View) buildSidebar() fyne.CanvasObject {
 		v.windowDotsCheck,
 		v.shadowCheck,
 		v.gradientCheck,
+		v.transparentCheck,
 	)
 
 	return container.NewVScroll(container.NewVBox(presetSection, styleSection))
@@ -339,6 +354,12 @@ func (v *View) applyStyleToUI() {
 	v.windowDotsCheck.SetChecked(v.style.ShowWindowDots)
 	v.shadowCheck.SetChecked(v.style.Shadow)
 	v.gradientCheck.SetChecked(v.style.Gradient)
+	v.transparentCheck.SetChecked(v.style.Transparent)
+	if v.style.Transparent {
+		v.gradientCheck.Disable()
+	} else {
+		v.gradientCheck.Enable()
+	}
 }
 
 // --- Рендер ---

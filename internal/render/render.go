@@ -31,6 +31,7 @@ type Style struct {
 	Gradient     bool       `json:"gradient"`
 	GradientFrom color.RGBA `json:"gradient_from"`
 	GradientTo   color.RGBA `json:"gradient_to"`
+	Transparent  bool       `json:"transparent"`
 
 	ShowLineNumbers bool `json:"show_line_numbers"`
 	ShowWindowDots  bool `json:"show_window_dots"`
@@ -48,8 +49,10 @@ func DefaultStyle() Style {
 		Padding:         48,
 		CornerRadius:    12,
 		Background:      color.RGBA{R: 30, G: 30, B: 46, A: 255},
+		Gradient:        false,
 		GradientFrom:    color.RGBA{R: 118, G: 75, B: 162, A: 255},
 		GradientTo:      color.RGBA{R: 255, G: 128, B: 181, A: 255},
+		Transparent:     false,
 		ShowWindowDots:  true,
 		Shadow:          true,
 		Scale:           2.0,
@@ -153,17 +156,23 @@ func (renderer) Render(tokens []highlight.Token, th theme.Theme, s Style) (image
 
 	dc := gg.NewContext(width, height)
 
-	// 1. Внешний фон или градиент
-	if s.Gradient {
+	// 1. Внешний фон: прозрачный / градиент / сплошной.
+	// При Transparent == true фон не рисуем: gg.NewContext создаёт
+	// image.RGBA с нулевой альфой, и PNG сохранится с прозрачностью.
+	if s.Transparent {
+		// ничего не рисуем — фон остаётся полностью прозрачным
+	} else if s.Gradient {
 		g := gg.NewLinearGradient(0, 0, float64(width), float64(height))
 		g.AddColorStop(0, s.GradientFrom)
 		g.AddColorStop(1, s.GradientTo)
 		dc.SetFillStyle(g)
+		dc.DrawRectangle(0, 0, float64(width), float64(height))
+		dc.Fill()
 	} else {
 		dc.SetColor(s.Background)
+		dc.DrawRectangle(0, 0, float64(width), float64(height))
+		dc.Fill()
 	}
-	dc.DrawRectangle(0, 0, float64(width), float64(height))
-	dc.Fill()
 
 	// 2. Карточка
 	cardX := padX
@@ -237,7 +246,7 @@ func (s Style) withDefaults() Style {
 	if s.Padding <= 0 {
 		s.Padding = d.Padding
 	}
-	if s.CornerRadius <= 0 {
+	if s.CornerRadius < 0 {
 		s.CornerRadius = d.CornerRadius
 	}
 	if s.Scale <= 0 {

@@ -95,6 +95,9 @@
 
 
 ### Проверка CLI
+
+#### Из исходников
+
 ```shell
 cd codepic-app/
 ```
@@ -127,3 +130,15 @@ go run ./cmd/codepic-cli --preset my-mk --out mk.png
 go run ./cmd/codepic-cli --copy
 ```
 (в TTY — warning про clipboard, PNG сохранён)
+
+#### Бинарником
+
+# Из TTY-контейнера:
+./codepic-cli --list-themes
+./codepic-cli --theme nord cmd/codepic/main.go
+./codepic-cli --copy cmd/codepic/main.go
+# → warning: clipboard unavailable...  (ожидаемо в TTY)
+
+# Заодно убедитесь, что CLI остался статическим:
+ldd ./codepic-cli
+# → not a dynamic executable

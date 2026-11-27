@@ -61,8 +61,12 @@ func NewView(svc *app.Service, w fyne.Window) *View {
 		langIDByName:  make(map[string]string),
 	}
 
+	// Загружаем последний стиль и язык из конфига.
 	if cfg, err := svc.Config(); err == nil {
 		v.style = cfg.LastStyle
+		if cfg.LastLanguage != "" {
+			v.currentLang = cfg.LastLanguage
+		}
 	} else {
 		v.style = render.DefaultStyle()
 	}
@@ -81,9 +85,32 @@ func NewView(svc *app.Service, w fyne.Window) *View {
 	w.SetContent(body)
 	w.Resize(fyne.NewSize(1400, 900))
 
+	// Сохранение состояния при закрытии окна.
+	w.SetCloseIntercept(func() {
+		v.saveState()
+		w.Close()
+	})
+
 	v.refreshPreview()
 	return v
 }
+
+// saveState сохраняет текущий стиль и язык в конфиг.
+// Вызывается из SetCloseIntercept перед закрытием окна.
+func (v *View) saveState() {
+	if v.debounce != nil {
+		v.debounce.Stop()
+	}
+	cfg, err := v.svc.Config()
+	if err != nil {
+		return
+	}
+	cfg.LastStyle = v.style
+	cfg.LastLanguage = v.currentLang
+	_ = v.svc.SaveConfig(cfg)
+}
+
+// --- Виджеты ---
 
 func (v *View) buildEditor() *widget.Entry {
 	e := widget.NewMultiLineEntry()
@@ -115,7 +142,21 @@ func (v *View) buildToolbar() fyne.CanvasObject {
 		v.currentLang = v.langIDByName[name]
 		v.scheduleRender()
 	})
-	v.langSelect.SetSelected("Авто")
+
+	// Восстанавливаем выбранный язык из конфига.
+	var selectedLangName string
+	for name, id := range v.langIDByName {
+		if id == v.currentLang {
+			selectedLangName = name
+			break
+		}
+	}
+	if selectedLangName != "" {
+		v.langSelect.SetSelected(selectedLangName)
+	} else {
+		v.langSelect.SetSelected("Авто")
+		v.currentLang = "auto"
+	}
 
 	var themeNames []string
 	var selectedThemeName string

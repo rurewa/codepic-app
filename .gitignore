@@ -23,5 +23,5 @@ Thumbs.db
 fyne-cross/dist/
 
 # Локальные артефакты
-*.png
-!docs/*.png
+#*.png
+#!docs/*.png

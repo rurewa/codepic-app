@@ -30,6 +30,7 @@ type View struct {
 
 	style       render.Style
 	currentLang string
+	lastPreset  string
 	debounce    *time.Timer
 
 	langSelect  *widget.Select
@@ -67,6 +68,9 @@ func NewView(svc *app.Service, w fyne.Window) *View {
 		if cfg.LastLanguage != "" {
 			v.currentLang = cfg.LastLanguage
 		}
+		if cfg.LastPreset != "" {
+			v.lastPreset = cfg.LastPreset
+		}
 	} else {
 		v.style = render.DefaultStyle()
 	}
@@ -77,6 +81,16 @@ func NewView(svc *app.Service, w fyne.Window) *View {
 
 	sidebar := v.buildSidebar()
 	toolbar := v.buildToolbar()
+
+	// Восстанавливаем последний выбранный пресет в списке.
+	if v.lastPreset != "" {
+		for _, name := range v.presetNames {
+			if name == v.lastPreset {
+				v.presetSelect.SetSelected(name)
+				break
+			}
+		}
+	}
 
 	split := container.NewHSplit(v.editor, v.preview)
 	split.SetOffset(0.4)
@@ -95,8 +109,7 @@ func NewView(svc *app.Service, w fyne.Window) *View {
 	return v
 }
 
-// saveState сохраняет текущий стиль и язык в конфиг.
-// Вызывается из SetCloseIntercept перед закрытием окна.
+// saveState сохраняет текущий стиль, язык и последний пресет в конфиг.
 func (v *View) saveState() {
 	if v.debounce != nil {
 		v.debounce.Stop()
@@ -107,6 +120,7 @@ func (v *View) saveState() {
 	}
 	cfg.LastStyle = v.style
 	cfg.LastLanguage = v.currentLang
+	cfg.LastPreset = v.lastPreset
 	_ = v.svc.SaveConfig(cfg)
 }
 
@@ -143,7 +157,6 @@ func (v *View) buildToolbar() fyne.CanvasObject {
 		v.scheduleRender()
 	})
 
-	// Восстанавливаем выбранный язык из конфига.
 	var selectedLangName string
 	for name, id := range v.langIDByName {
 		if id == v.currentLang {
@@ -323,6 +336,7 @@ func (v *View) onLoadPreset() {
 		return
 	}
 	v.style = style
+	v.lastPreset = name
 	v.applyStyleToUI()
 	v.scheduleRender()
 	v.status.SetText(fmt.Sprintf("Загружен пресет: %s", name))
@@ -351,6 +365,7 @@ func (v *View) onSavePreset() {
 		}
 		v.reloadPresets()
 		v.presetSelect.SetSelected(name)
+		v.lastPreset = name
 		v.status.SetText(fmt.Sprintf("Пресет %q сохранён", name))
 	}, v.window)
 	d.Resize(fyne.NewSize(500, 200))
@@ -375,6 +390,10 @@ func (v *View) onDeletePreset() {
 				return
 			}
 			v.reloadPresets()
+			if v.lastPreset == name {
+				v.lastPreset = ""
+				v.presetSelect.ClearSelected()
+			}
 			v.status.SetText(fmt.Sprintf("Пресет %q удалён", name))
 		},
 		v.window,

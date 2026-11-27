@@ -24,6 +24,7 @@ type Preset struct {
 type Config struct {
 	Version      int          `json:"version"`
 	LastLanguage string       `json:"last_language"`
+	LastPreset   string       `json:"last_preset"`
 	LastStyle    render.Style `json:"last_style"`
 	Presets      []Preset     `json:"presets"`
 	WindowWidth  int          `json:"window_width"`
@@ -35,6 +36,7 @@ func DefaultConfig() Config {
 	return Config{
 		Version:      Version,
 		LastLanguage: "auto",
+		LastPreset:   "",
 		LastStyle:    render.DefaultStyle(),
 		Presets:      nil,
 		WindowWidth:  1200,
@@ -74,8 +76,8 @@ func (s *FileStore) Path() string { return s.path }
 
 // Load читает конфиг.
 //   - файла нет        → (DefaultConfig(), nil)
-//   - файл битый       → (DefaultConfig(), error) — вызывающий решает, ругаться или нет
-//   - версия новее     → (DefaultConfig(), error) — конфиг от будущей версии
+//   - файл битый       → (DefaultConfig(), error)
+//   - версия новее     → (DefaultConfig(), error)
 func (s *FileStore) Load() (Config, error) {
 	data, err := os.ReadFile(s.path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -97,7 +99,6 @@ func (s *FileStore) Load() (Config, error) {
 		)
 	}
 
-	// Лёгкая валидация: пустые критичные поля → дефолт.
 	if c.LastLanguage == "" {
 		c.LastLanguage = "auto"
 	}
@@ -108,7 +109,6 @@ func (s *FileStore) Load() (Config, error) {
 }
 
 // Save пишет конфиг атомарно: tmp-файл рядом + rename.
-// Это защищает от порчи файла при краше посреди записи.
 func (s *FileStore) Save(c Config) error {
 	c.Version = Version
 
@@ -122,7 +122,7 @@ func (s *FileStore) Save(c Config) error {
 		return fmt.Errorf("config: create temp: %w", err)
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName) // на случай ошибки до Rename
+	defer os.Remove(tmpName)
 
 	enc := json.NewEncoder(tmp)
 	enc.SetIndent("", "  ")

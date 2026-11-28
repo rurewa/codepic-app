@@ -1,0 +1,173 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux
+            ext: ''
+          - target: windows
+            ext: '.exe'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Install fyne-cross
+        run: go install github.com/fyne-io/fyne-cross@latest
+
+      # --- GUI ---
+      - name: Build GUI with fyne-cross
+        run: |
+          fyne-cross ${{ matrix.target }} \
+            -arch=amd64 \
+            -icon assets/icons/icon.png \
+            -app-id io.github.rurewa.codepic \
+            -name codepic \
+            -ldflags=-s \
+            -ldflags=-w \
+            ./cmd/codepic
+
+      # --- CLI ---
+      - name: Build CLI
+        run: |
+          if [ "${{ matrix.target }}" = "linux" ]; then
+            CGO_ENABLED=0 go build -ldflags="-s -w" -o codepic-cli-linux-amd64 ./cmd/codepic-cli
+          else
+            GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o codepic-cli-windows-amd64.exe ./cmd/codepic-cli
+          fi
+
+      # --- Linux packages ---
+      - name: Install packaging tools
+        if: matrix.target == 'linux'
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          sudo apt-get update
+          sudo apt-get install -y libfuse2t64 squashfs-tools xdg-utils || sudo apt-get install -y libfuse2 squashfs-tools xdg-utils
+
+      - name: Build .deb and .rpm
+        if: matrix.target == 'linux'
+        run: |
+          mkdir -p package-root/usr/bin
+          cp fyne-cross/dist/linux-amd64/codepic package-root/usr/bin/codepic
+          chmod +x package-root/usr/bin/codepic
+
+          cat > nfpm.yaml <<EOF
+          name: "codepic"
+          arch: "amd64"
+          platform: "linux"
+          version: "${GITHUB_REF_NAME#v}"
+          section: "utils"
+          priority: "optional"
+          maintainer: "rurewa"
+          description: "Local code screenshotter for messengers"
+          vendor: "rurewa"
+          homepage: "https://github.com/rurewa/codepic-app"
+          license: "MIT"
+          contents:
+            - src: package-root/usr/bin/codepic
+              dst: /usr/bin/codepic
+            - src: assets/icons/icon.png
+              dst: /usr/share/icons/hicolor/256x256/apps/codepic.png
+          EOF
+
+          nfpm package --packager deb --target artifacts/ -f nfpm.yaml
+          nfpm package --packager rpm --target artifacts/ -f nfpm.yaml
+
+      - name: Build AppImage
+        if: matrix.target == 'linux'
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          mkdir -p AppDir/usr/bin
+          cp fyne-cross/dist/linux-amd64/codepic AppDir/usr/bin/codepic
+          chmod +x AppDir/usr/bin/codepic
+
+          cat > AppDir/codepic.desktop <<EOF
+          [Desktop Entry]
+          Name=CodePic
+          Comment=Local code screenshotter
+          Exec=codepic
+          Icon=codepic
+          Terminal=false
+          Type=Application
+          Categories=Utility;Development;
+          EOF
+
+          cp assets/icons/icon.png AppDir/codepic.png
+
+          # Скачиваем инструменты
+          mkdir -p .cache/appimage
+          curl -L -o .cache/appimage/linuxdeploy-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x .cache/appimage/linuxdeploy-x86_64.AppImage
+
+          ./.cache/appimage/linuxdeploy-x86_64.AppImage \
+            --appdir AppDir \
+            --output appimage \
+            --desktop-file AppDir/codepic.desktop \
+            --icon-file AppDir/codepic.png
+
+          mv CodePic*.AppImage artifacts/codepic-linux-amd64.AppImage
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p artifacts
+          if [ "${{ matrix.target }}" = "linux" ]; then
+            cp fyne-cross/dist/linux-amd64/codepic.tar.xz artifacts/codepic-linux-amd64.tar.xz
+            cp codepic-cli-linux-amd64 artifacts/codepic-cli-linux-amd64
+          else
+            cp fyne-cross/dist/windows-amd64/codepic.exe.zip artifacts/codepic-windows-amd64.zip
+            cp codepic-cli-windows-amd64.exe artifacts/codepic-cli-windows-amd64.exe
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-${{ matrix.target }}
+          path: artifacts/
+
+  release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/codepic-linux-amd64.tar.xz
+            artifacts/codepic-cli-linux-amd64
+            artifacts/codepic-linux-amd64.deb
+            artifacts/codepic-linux-amd64.rpm
+            artifacts/codepic-linux-amd64.AppImage
+            artifacts/codepic-windows-amd64.zip
+            artifacts/codepic-cli-windows-amd64.exe
+          draft: false
+          prerelease: false
+          generate_release_notes: true

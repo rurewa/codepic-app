@@ -19,8 +19,8 @@ go.work.sum
 .DS_Store
 Thumbs.db
 
-# fyne-cross (когда появится)
-fyne-cross/dist/
+# fyne-cross артефакты
+fyne-cross/
 
 # Локальные артефакты
 #*.png

@@ -63,15 +63,10 @@ jobs:
             GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o codepic-cli-windows-amd64.exe ./cmd/codepic-cli
           fi
 
-      # --- Установка инструментов упаковки (только Linux) ---
-      - name: Install packaging tools
+      # --- Установка nfpm (только Linux) ---
+      - name: Install nfpm
         if: matrix.target == 'linux'
-        run: |
-          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
-          sudo apt-get update
-          sudo apt-get install -y squashfs-tools xdg-utils file
-          # FUSE для AppImage (на Ubuntu 24.04 пакет называется libfuse2t64)
-          sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2 || true
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
       # --- .deb и .rpm ---
       - name: Build .deb and .rpm
@@ -125,57 +120,6 @@ jobs:
           nfpm package --packager deb --target artifacts/ -f nfpm.yaml
           nfpm package --packager rpm --target artifacts/ -f nfpm.yaml
 
-      # --- AppImage ---
-      - name: Build AppImage
-        if: matrix.target == 'linux'
-        env:
-          APPIMAGE_EXTRACT_AND_RUN: "1"
-        run: |
-          # Бинарник уже распакован предыдущим шагом
-          BIN_PATH=$(find extracted -type f -name 'codepic' | head -n1)
-          if [ -z "$BIN_PATH" ]; then
-            echo "❌ Бинарник для AppImage не найден"
-            exit 1
-          fi
-
-          mkdir -p AppDir/usr/bin artifacts
-          cp "$BIN_PATH" AppDir/usr/bin/codepic
-          chmod +x AppDir/usr/bin/codepic
-
-          cat > AppDir/codepic.desktop <<EOF
-          [Desktop Entry]
-          Name=CodePic
-          Comment=Local code screenshotter
-          Exec=codepic
-          Icon=codepic
-          Terminal=false
-          Type=Application
-          Categories=Utility;Development;
-          EOF
-
-          cp assets/icons/icon.png AppDir/codepic.png
-
-          # linuxdeploy
-          mkdir -p .cache/appimage
-          curl -L -o .cache/appimage/linuxdeploy-x86_64.AppImage \
-            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          chmod +x .cache/appimage/linuxdeploy-x86_64.AppImage
-
-          ./.cache/appimage/linuxdeploy-x86_64.AppImage \
-            --appdir AppDir \
-            --output appimage \
-            --desktop-file AppDir/codepic.desktop \
-            --icon-file AppDir/codepic.png
-
-          # Ищем результат (linuxdeploy называет по-разному)
-          APPIMAGE=$(find . -maxdepth 1 -name '*.AppImage' ! -name 'linuxdeploy*' | head -n1)
-          if [ -z "$APPIMAGE" ]; then
-            echo "❌ AppImage не создан"
-            ls -lah
-            exit 1
-          fi
-          mv "$APPIMAGE" artifacts/codepic-linux-amd64.AppImage
-
       # --- Сбор артефактов ---
       - name: Collect artifacts
         run: |
@@ -221,7 +165,6 @@ jobs:
             artifacts/codepic-cli-linux-amd64
             artifacts/codepic-linux-amd64.deb
             artifacts/codepic-linux-amd64.rpm
-            artifacts/codepic-linux-amd64.AppImage
             artifacts/codepic-windows-amd64.zip
             artifacts/codepic-cli-windows-amd64.exe
           draft: false

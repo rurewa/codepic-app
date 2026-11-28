@@ -97,12 +97,19 @@ jobs:
           cp "$BIN_PATH" package-root/usr/bin/codepic
           chmod +x package-root/usr/bin/codepic
 
-          # 4. nfpm.yaml
+          # 4. Версия: из тега или fallback для ручного запуска
+          VERSION="${GITHUB_REF_NAME#v}"
+          if ! [[ "$VERSION" =~ ^[0-9] ]]; then
+            VERSION="0.0.0-dev"
+          fi
+          echo "Версия пакета: $VERSION"
+
+          # 5. nfpm.yaml
           cat > nfpm.yaml <<EOF
           name: "codepic"
           arch: "amd64"
           platform: "linux"
-          version: "${GITHUB_REF_NAME#v}"
+          version: "$VERSION"
           section: "utils"
           priority: "optional"
           maintainer: "rurewa"
@@ -119,6 +126,15 @@ jobs:
 
           nfpm package --packager deb --target artifacts/ -f nfpm.yaml
           nfpm package --packager rpm --target artifacts/ -f nfpm.yaml
+
+          # 6. Приводим имена к предсказуемым
+          DEB_FILE=$(find artifacts -maxdepth 1 -name '*.deb' | head -n1)
+          RPM_FILE=$(find artifacts -maxdepth 1 -name '*.rpm' | head -n1)
+          [ -n "$DEB_FILE" ] && mv "$DEB_FILE" artifacts/codepic-linux-amd64.deb
+          [ -n "$RPM_FILE" ] && mv "$RPM_FILE" artifacts/codepic-linux-amd64.rpm
+
+          echo "=== artifacts после nfpm ==="
+          ls -lah artifacts/
 
       # --- Сбор артефактов ---
       - name: Collect artifacts
@@ -161,12 +177,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/codepic-linux-amd64.tar.xz
-            artifacts/codepic-cli-linux-amd64
-            artifacts/codepic-linux-amd64.deb
-            artifacts/codepic-linux-amd64.rpm
-            artifacts/codepic-windows-amd64.zip
-            artifacts/codepic-cli-windows-amd64.exe
+            artifacts/*
           draft: false
           prerelease: false
           generate_release_notes: true

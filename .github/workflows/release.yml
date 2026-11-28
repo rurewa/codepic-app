@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:  # ручной запуск для отладки
 
 permissions:
   contents: write
@@ -48,6 +49,11 @@ jobs:
             -ldflags=-w \
             ./cmd/codepic
 
+      - name: Debug - list fyne-cross output
+        run: |
+          echo "=== fyne-cross/dist/${{ matrix.target }}-amd64 ==="
+          ls -lah fyne-cross/dist/${{ matrix.target }}-amd64/ || true
+
       # --- CLI ---
       - name: Build CLI
         run: |
@@ -57,21 +63,46 @@ jobs:
             GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o codepic-cli-windows-amd64.exe ./cmd/codepic-cli
           fi
 
-      # --- Linux packages ---
+      # --- Установка инструментов упаковки (только Linux) ---
       - name: Install packaging tools
         if: matrix.target == 'linux'
         run: |
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
           sudo apt-get update
-          sudo apt-get install -y libfuse2t64 squashfs-tools xdg-utils || sudo apt-get install -y libfuse2 squashfs-tools xdg-utils
+          sudo apt-get install -y squashfs-tools xdg-utils file
+          # FUSE для AppImage (на Ubuntu 24.04 пакет называется libfuse2t64)
+          sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2 || true
 
+      # --- .deb и .rpm ---
       - name: Build .deb and .rpm
         if: matrix.target == 'linux'
         run: |
-          mkdir -p package-root/usr/bin
-          cp fyne-cross/dist/linux-amd64/codepic package-root/usr/bin/codepic
+          # 1. Распаковываем архив, созданный fyne-cross
+          mkdir -p extracted
+          ARCHIVE=$(find fyne-cross/dist/linux-amd64 -maxdepth 1 -name '*.tar.xz' | head -n1)
+          if [ -z "$ARCHIVE" ]; then
+            echo "❌ Не найден .tar.xz в fyne-cross/dist/linux-amd64/"
+            ls -R fyne-cross/dist/linux-amd64/
+            exit 1
+          fi
+          echo "Найден архив: $ARCHIVE"
+          tar -xf "$ARCHIVE" -C extracted
+
+          # 2. Ищем бинарник
+          BIN_PATH=$(find extracted -type f -name 'codepic' | head -n1)
+          if [ -z "$BIN_PATH" ]; then
+            echo "❌ Не найден бинарник codepic в распакованном архиве"
+            ls -R extracted/
+            exit 1
+          fi
+          echo "Найден бинарник: $BIN_PATH"
+
+          # 3. Готовим пакет
+          mkdir -p package-root/usr/bin artifacts
+          cp "$BIN_PATH" package-root/usr/bin/codepic
           chmod +x package-root/usr/bin/codepic
 
+          # 4. nfpm.yaml
           cat > nfpm.yaml <<EOF
           name: "codepic"
           arch: "amd64"
@@ -94,13 +125,21 @@ jobs:
           nfpm package --packager deb --target artifacts/ -f nfpm.yaml
           nfpm package --packager rpm --target artifacts/ -f nfpm.yaml
 
+      # --- AppImage ---
       - name: Build AppImage
         if: matrix.target == 'linux'
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
         run: |
-          mkdir -p AppDir/usr/bin
-          cp fyne-cross/dist/linux-amd64/codepic AppDir/usr/bin/codepic
+          # Бинарник уже распакован предыдущим шагом
+          BIN_PATH=$(find extracted -type f -name 'codepic' | head -n1)
+          if [ -z "$BIN_PATH" ]; then
+            echo "❌ Бинарник для AppImage не найден"
+            exit 1
+          fi
+
+          mkdir -p AppDir/usr/bin artifacts
+          cp "$BIN_PATH" AppDir/usr/bin/codepic
           chmod +x AppDir/usr/bin/codepic
 
           cat > AppDir/codepic.desktop <<EOF
@@ -116,9 +155,10 @@ jobs:
 
           cp assets/icons/icon.png AppDir/codepic.png
 
-          # Скачиваем инструменты
+          # linuxdeploy
           mkdir -p .cache/appimage
-          curl -L -o .cache/appimage/linuxdeploy-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -L -o .cache/appimage/linuxdeploy-x86_64.AppImage \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           chmod +x .cache/appimage/linuxdeploy-x86_64.AppImage
 
           ./.cache/appimage/linuxdeploy-x86_64.AppImage \
@@ -127,24 +167,37 @@ jobs:
             --desktop-file AppDir/codepic.desktop \
             --icon-file AppDir/codepic.png
 
-          mv CodePic*.AppImage artifacts/codepic-linux-amd64.AppImage
+          # Ищем результат (linuxdeploy называет по-разному)
+          APPIMAGE=$(find . -maxdepth 1 -name '*.AppImage' ! -name 'linuxdeploy*' | head -n1)
+          if [ -z "$APPIMAGE" ]; then
+            echo "❌ AppImage не создан"
+            ls -lah
+            exit 1
+          fi
+          mv "$APPIMAGE" artifacts/codepic-linux-amd64.AppImage
 
+      # --- Сбор артефактов ---
       - name: Collect artifacts
         run: |
           mkdir -p artifacts
           if [ "${{ matrix.target }}" = "linux" ]; then
-            cp fyne-cross/dist/linux-amd64/codepic.tar.xz artifacts/codepic-linux-amd64.tar.xz
+            ARCHIVE=$(find fyne-cross/dist/linux-amd64 -maxdepth 1 -name '*.tar.xz' | head -n1)
+            cp "$ARCHIVE" artifacts/codepic-linux-amd64.tar.xz
             cp codepic-cli-linux-amd64 artifacts/codepic-cli-linux-amd64
           else
-            cp fyne-cross/dist/windows-amd64/codepic.exe.zip artifacts/codepic-windows-amd64.zip
+            ARCHIVE=$(find fyne-cross/dist/windows-amd64 -maxdepth 1 -name '*.zip' | head -n1)
+            cp "$ARCHIVE" artifacts/codepic-windows-amd64.zip
             cp codepic-cli-windows-amd64.exe artifacts/codepic-cli-windows-amd64.exe
           fi
+          echo "=== artifacts ==="
+          ls -lah artifacts/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: artifacts-${{ matrix.target }}
           path: artifacts/
+          if-no-files-found: error
 
   release:
     name: Publish Release
@@ -156,6 +209,9 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+
+      - name: List all files
+        run: ls -R artifacts
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -171,3 +227,5 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
